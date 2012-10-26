@@ -29,10 +29,12 @@ import android.content.Intent;
 import android.content.Loader;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Parcelable;
+import android.os.PowerManager;
 import android.preference.PreferenceManager;
 import android.provider.ContactsContract.Profile;
 import android.support.v4.view.PagerAdapter;
@@ -127,6 +129,7 @@ public class QuickMessagePopup extends Activity implements
     private Context mContext;
     private boolean mScreenUnlocked = false;
     private KeyguardManager mKeyguardManager = null;
+    private PowerManager mPowerManager;
 
     // Message list items
     private ArrayList<QuickMessage> mMessageList;
@@ -164,6 +167,8 @@ public class QuickMessagePopup extends Activity implements
         mMessageList = new ArrayList<QuickMessage>();
         mDefaultContactImage = getResources().getDrawable(R.drawable.ic_contact_picture);
         mNumTemplates = getTemplatesCount();
+        mPowerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        mKeyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
 
         // Get the preferences
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(mContext);
@@ -195,10 +200,11 @@ public class QuickMessagePopup extends Activity implements
         mViewButton = (Button) findViewById(R.id.button_view);
 
         // Set the theme color on the pager arrow
+        Resources res = getResources();
         if (mDarkTheme) {
-            mQmPagerArrow.setBackgroundColor(0xff1e1e1e); // dark theme
+            mQmPagerArrow.setBackgroundColor(res.getColor(R.color.quickmessage_body_dark_bg));
         } else {
-            mQmPagerArrow.setBackgroundColor(0xfff3f3f3); // light theme
+            mQmPagerArrow.setBackgroundColor(res.getColor(R.color.quickmessage_body_light_bg));
         }
 
         // ViewPager Support
@@ -249,6 +255,9 @@ public class QuickMessagePopup extends Activity implements
                 mCurrentQm = mMessageList.get(mCurrentPage);
                 Intent vi = mCurrentQm.getViewIntent();
                 if (vi != null) {
+                    mCurrentQm.saveReplyText();
+                    vi.putExtra("sms_body", mCurrentQm.getReplyText());
+
                     startActivity(vi);
                 }
                 clearNotification(false);
@@ -300,6 +309,7 @@ public class QuickMessagePopup extends Activity implements
 
         // Load and display the new message
         parseIntent(intent.getExtras(), true);
+        unlockScreen();
     }
 
     @Override
@@ -569,9 +579,11 @@ public class QuickMessagePopup extends Activity implements
             return;
         }
 
-        // See if the screen is locked and get the wake lock to turn on the screen
-        mKeyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
-        if (mKeyguardManager.inKeyguardRestrictedInputMode()) {
+        // See if the screen is locked or if no lock set and the screen is off
+        // and get the wake lock to turn on the screen.
+        boolean isScreenOn = mPowerManager.isScreenOn();
+        boolean inKeyguardRestrictedInputMode = mKeyguardManager.inKeyguardRestrictedInputMode();
+        if (inKeyguardRestrictedInputMode || ((!inKeyguardRestrictedInputMode) && !isScreenOn)) {
             ManageWakeLock.acquireFull(mContext);
             mScreenUnlocked = true;
         }
